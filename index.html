@@ -22,7 +22,7 @@
       max-width: 800px;
     }
 
-    .message, .time {
+    .message, .counter {
       min-height: 50px;
       display: flex;
       align-items: center;
@@ -41,7 +41,7 @@
       cursor: pointer;
       user-select: none;
       width: 100%;
-      min-height: 100px;
+      min-height: 200px;
       background-color: beige;
       border-color: #b0ffb0;
       border-width: 0px 0px 5px 0px;
@@ -55,6 +55,10 @@
       }
     }
 
+    .legend {
+      margin: 5px;
+    }
+
 
 </style>
 </head>
@@ -63,9 +67,11 @@
   <div class="message" id="message">
     Stopped
   </div>
-  <div class="time">00:12</div>
-  <button class="action-button" id="record">Record</button>
-  <button class="action-button" id="play">Play</button>
+  <div class="counter" id="counter">00:00.0</div>
+  <button class="action-button" id="action">Play/Record</button>
+  <div class="legend">
+    <b>Play</b>:Tap <b>Record</b>:Press and hold
+  </div>
 </div>
 <script>
 
@@ -76,44 +82,112 @@ const PLAYING = 2;
 const TIMESLICE = 500; //ms
 
 let state = STOPPED;
+let pressTimer = null;
+const threshold = 600; // milliseconds
 
- let mediaRecorder;
-    let audioChunks = [];
-    let audioBlob;
-    let mediaStream;
-    let audioPlayer; // Holds the current Audio object
+let recordingLength = 0;
+let keepCounting = false;
 
-    async function startAudioGrab() {
-      try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+let mediaRecorder;
+let audioChunks = [];
+let audioBlob;
+let mediaStream;
+let audioPlayer; // Holds the current Audio object
+  const counterEl = document.getElementById('counter');
 
-        mediaRecorder = new MediaRecorder(mediaStream);
-        audioChunks = []; // Reset buffer
+let timerInterval = null;
+let startTime = null;
+let countdownTarget = null;
+let isCountingDown = false;
 
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            console.log("data availalbe");
-            audioChunks.push(event.data);
-          }
-        };
+// Helper: format ms to "MM:SS.d"
+function formatTime(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+  const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+  const tenths = Math.floor((ms % 1000) / 100);
+  return `${minutes}:${seconds}.${tenths}`;
+}
 
-        mediaRecorder.start(TIMESLICE);
-        console.log('Recording started');
-      } catch (err) {
-        console.error('Error accessing mic:', err);
-      }
+function setCounter(ms) {
+  counterEl.textContent = formatTime(ms);
+}
+
+function startCountUp() {
+  stopTimers(); // make sure we don't double-run
+  isCountingDown = false;
+  startTime = Date.now();
+  timerInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    setCounter(elapsed);
+  }, 100);
+}
+
+function stopCountUp() {
+  if (!timerInterval || isCountingDown) return 0;
+  clearInterval(timerInterval);
+  timerInterval = null;
+  const elapsed = Date.now() - startTime;
+  setCounter(elapsed);
+  return elapsed;
+}
+
+function startCountDown(startValue) {
+  stopTimers();
+  isCountingDown = true;
+  countdownTarget = startValue;
+  startTime = Date.now();
+  timerInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    const remaining = Math.max(0, countdownTarget - elapsed);
+    setCounter(remaining);
+    if (remaining <= 0) {
+      stopCountDown();
     }
+  }, 100);
+}
 
-    function stopAudioGrab() {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-        console.log('Recording stopped');
-      }
+function stopCountDown() {
+  if (!timerInterval || !isCountingDown) return;
+  clearInterval(timerInterval);
+  timerInterval = null;
+}
 
-      if (mediaStream) {
-        mediaStream.getTracks().forEach(track => track.stop());
+function stopTimers() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+async function startAudioGrab() {
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    mediaRecorder = new MediaRecorder(mediaStream);
+    audioChunks = []; // Reset buffer
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        audioChunks.push(event.data);
       }
-    }
+    };
+
+    mediaRecorder.start(TIMESLICE);
+  } catch (err) {
+    console.error('Error accessing mic:', err);
+  }
+}
+
+function stopAudioGrab() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(track => track.stop());
+  }
+}
 
 function playAudio() {
   if (audioChunks.length === 0) {
@@ -136,11 +210,12 @@ function playAudio() {
   };
 
   audioPlayer.play();
-  console.log('Playing audio');
 }
 
 function audioEnded() {
   state = STOPPED;
+  stopCountDown();
+  setCounter(recordingLength);
   $("#message").text("Stopped");
 }
 
@@ -148,7 +223,6 @@ function stopAudio() {
   if (audioPlayer) {
     audioPlayer.pause();
     audioPlayer.currentTime = 0;
-    console.log('Audio playback stopped');
   }
 }
 
@@ -156,30 +230,37 @@ function startRecording() {
   state = RECORDING;
   $("#message").text("Recording");
   startAudioGrab();
+  startCountUp();
 }
 
 function stopRecording() {
   state = STOPPED;
+  recordingLength = stopCountUp();
   $("#message").text("Stopped");
   stopAudioGrab();
     setTimeout(() => {
       playRecording();
     }, TIMESLICE + 1);
+    
 }
 
 function playRecording() {
   state = PLAYING;
   $("#message").text("Playing");
+  startCountDown(recordingLength);
   playAudio();
 }
 
 function stopPlayback() {
   state = STOPPED;
+  stopCountDown();
+  setCounter(recordingLength);
   $("#message").text("Stopped");
   stopAudio();
 }
 
-function handleRecord(event) {
+
+function handleLongPress() {
   if (state === STOPPED) {
     startRecording();
   } 
@@ -193,7 +274,7 @@ function handleRecord(event) {
   }
 }
 
-function handlePlay(event) {
+function handleShortPress() {
   if (state === STOPPED) {
     playRecording();
   } 
@@ -204,11 +285,39 @@ function handlePlay(event) {
     stopRecording();
     playRecording();
   }
+}
+
+function startPressTimer(e) {
+  // Prevent right-click / context menu
+  if (e.type === 'mousedown' && e.button !== 0) return;
+  pressTimer = setTimeout(() => {
+    pressTimer = null;
+    handleLongPress();
+  }, threshold);
+}
+
+function cancelPressTimer() {
+  if (pressTimer !== null) {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+    handleShortPress();
+  }
+}
+
+function registerCallbacks() {
+  const button = document.getElementById('action');
+  button.addEventListener('mousedown', startPressTimer);
+  button.addEventListener('mouseup', cancelPressTimer);
+  button.addEventListener('mouseleave', cancelPressTimer);
+
+  // Mobile
+  button.addEventListener('touchstart', startPressTimer);
+  button.addEventListener('touchend', cancelPressTimer);
+  button.addEventListener('touchcancel', cancelPressTimer);
 }
 
 $(document).ready(function () {
-    $("#record").on("click", handleRecord);
-    $("#play").on("click", handlePlay);
+  registerCallbacks();
 });
 
 </script>
