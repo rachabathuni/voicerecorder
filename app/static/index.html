@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" href="favicon.svg">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voice Recorder</title>
+  <style>
+    body {
+      margin: 0 auto;
+      font-family: 'Verdana', serif;
+    }
+
+    .outer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      margin: 0 auto;
+      background: white;
+      max-width: 800px;
+    }
+
+    .message, .time {
+      min-height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 1.3em;
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+    }
+
+
+    .action-button {
+      font-weight: bold;
+      font-size: 1.2em;
+      cursor: pointer;
+      user-select: none;
+      width: 100%;
+      min-height: 100px;
+      background-color: beige;
+      border-color: #b0ffb0;
+      border-width: 0px 0px 5px 0px;
+      margin-top: 5px;
+  }      
+ 
+
+    @media (max-width: 500px) {
+      .clue-box {
+        font-size: 1.1em;
+      }
+    }
+
+
+</style>
+</head>
+<body>
+<div class="outer">
+  <div class="message" id="message">
+    Stopped
+  </div>
+  <div class="time">00:12</div>
+  <button class="action-button" id="record">Record</button>
+  <button class="action-button" id="play">Play</button>
+</div>
+<script>
+
+const STOPPED = 0;
+const RECORDING = 1;
+const PLAYING = 2;
+
+const TIMESLICE = 500; //ms
+
+let state = STOPPED;
+
+ let mediaRecorder;
+    let audioChunks = [];
+    let audioBlob;
+    let mediaStream;
+    let audioPlayer; // Holds the current Audio object
+
+    async function startAudioGrab() {
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        mediaRecorder = new MediaRecorder(mediaStream);
+        audioChunks = []; // Reset buffer
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            console.log("data availalbe");
+            audioChunks.push(event.data);
+          }
+        };
+
+        mediaRecorder.start(TIMESLICE);
+        console.log('Recording started');
+      } catch (err) {
+        console.error('Error accessing mic:', err);
+      }
+    }
+
+    function stopAudioGrab() {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        console.log('Recording stopped');
+      }
+
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+      }
+    }
+
+function playAudio() {
+  if (audioChunks.length === 0) {
+    console.warn('No audio recorded yet!');
+    return;
+  }
+
+  audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+  const audioURL = URL.createObjectURL(audioBlob);
+
+  if (audioPlayer) {
+    audioPlayer.pause();
+    audioPlayer = null;
+  }
+
+  audioPlayer = new Audio(audioURL);
+
+  audioPlayer.onended = function () {
+    audioEnded();
+  };
+
+  audioPlayer.play();
+  console.log('Playing audio');
+}
+
+function audioEnded() {
+  state = STOPPED;
+  $("#message").text("Stopped");
+}
+
+function stopAudio() {
+  if (audioPlayer) {
+    audioPlayer.pause();
+    audioPlayer.currentTime = 0;
+    console.log('Audio playback stopped');
+  }
+}
+
+function startRecording() {
+  state = RECORDING;
+  $("#message").text("Recording");
+  startAudioGrab();
+}
+
+function stopRecording() {
+  state = STOPPED;
+  $("#message").text("Stopped");
+  stopAudioGrab();
+    setTimeout(() => {
+      playRecording();
+    }, TIMESLICE + 1);
+}
+
+function playRecording() {
+  state = PLAYING;
+  $("#message").text("Playing");
+  playAudio();
+}
+
+function stopPlayback() {
+  state = STOPPED;
+  $("#message").text("Stopped");
+  stopAudio();
+}
+
+function handleRecord(event) {
+  if (state === STOPPED) {
+    startRecording();
+  } 
+  else if (state === RECORDING) {
+    stopRecording();
+    playRecording();
+  }
+  else if (state === PLAYING) {
+    stopPlayback();
+    startRecording();
+  }
+}
+
+function handlePlay(event) {
+  if (state === STOPPED) {
+    playRecording();
+  } 
+  else if (state === PLAYING) {
+    stopPlayback();
+  }
+  else if (state === RECORDING) {
+    stopRecording();
+    playRecording();
+  }
+}
+
+$(document).ready(function () {
+    $("#record").on("click", handleRecord);
+    $("#play").on("click", handlePlay);
+});
+
+</script>
+</body>
+</html>
