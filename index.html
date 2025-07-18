@@ -41,13 +41,19 @@
       cursor: pointer;
       user-select: none;
       width: 100%;
-      min-height: 200px;
-      background-color: beige;
-      border-color: #b0ffb0;
+      background-color: #daf7ff;
+      border-color: #29b6ff;
       border-width: 0px 0px 5px 0px;
       margin-top: 5px;
-  }      
+  }
+
+    .record-button {
+      min-height: 100px;
+    }
  
+    .play-button {
+      min-height: 200px;
+    }
 
     @media (max-width: 500px) {
       .clue-box {
@@ -68,10 +74,8 @@
     Stopped
   </div>
   <div class="counter" id="counter">00:00.0</div>
-  <button class="action-button" id="action">Play/Record</button>
-  <div class="legend">
-    <b>Play</b>:Tap <b>Record</b>:Press and hold
-  </div>
+  <button class="action-button play-button" id="playbutton">▶️Play</button>
+  <button class="action-button record-button" id="recordbutton">🎙️Record</button>
 </div>
 <script>
 
@@ -212,11 +216,29 @@ function playAudio() {
   audioPlayer.play();
 }
 
+function syncDisplayState() {
+  if (state == STOPPED) {
+    $("#playbutton").text("▶️Play");
+    $("#recordbutton").text("🎙️Record");
+    $("#message").text("Stopped");
+  }
+  else if (state == PLAYING) {
+    $("#playbutton").text("⏹️Stop");
+    $("#recordbutton").text("🎙️Record");
+    $("#message").text("Playing");
+  }
+  else if (state == RECORDING) {
+    $("#playbutton").text("▶️Play");
+    $("#recordbutton").text("⏹️Stop");
+    $("#message").text("Recording");
+  }
+}
+
 function audioEnded() {
   state = STOPPED;
   stopCountDown();
   setCounter(recordingLength);
-  $("#message").text("Stopped");
+  syncDisplayState();
 }
 
 function stopAudio() {
@@ -228,7 +250,7 @@ function stopAudio() {
 
 function startRecording() {
   state = RECORDING;
-  $("#message").text("Recording");
+  syncDisplayState();
   startAudioGrab();
   startCountUp();
 }
@@ -236,7 +258,7 @@ function startRecording() {
 function stopRecording() {
   state = STOPPED;
   recordingLength = stopCountUp();
-  $("#message").text("Stopped");
+  syncDisplayState();
   stopAudioGrab();
     setTimeout(() => {
       playRecording();
@@ -246,7 +268,7 @@ function stopRecording() {
 
 function playRecording() {
   state = PLAYING;
-  $("#message").text("Playing");
+  syncDisplayState();
   startCountDown(recordingLength);
   playAudio();
 }
@@ -255,12 +277,12 @@ function stopPlayback() {
   state = STOPPED;
   stopCountDown();
   setCounter(recordingLength);
-  $("#message").text("Stopped");
+  syncDisplayState();
   stopAudio();
 }
 
 
-function handleLongPress() {
+function handleRecordButton() {
   if (state === STOPPED) {
     startRecording();
   } 
@@ -274,7 +296,11 @@ function handleLongPress() {
   }
 }
 
-function handleShortPress() {
+function handlePlayButton() {
+  if (audioChunks.length === 0) {
+    console.warn('No audio recorded yet!');
+    return;
+  }
   if (state === STOPPED) {
     playRecording();
   } 
@@ -305,6 +331,14 @@ function cancelPressTimer() {
 }
 
 function registerCallbacks() {
+  const recordButton = document.getElementById('recordbutton');
+  const playButton = document.getElementById('playbutton');
+  $("#recordbutton").click(handleRecordButton);
+  $("#playbutton").click(handlePlayButton);
+
+}
+
+function registerCallbacks_deleted() {
   const button = document.getElementById('action');
   button.addEventListener('mousedown', startPressTimer);
   button.addEventListener('mouseup', cancelPressTimer);
